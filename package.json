@@ -106,10 +106,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/livebind"
+    "url": "https://github.com/dashw00d/livebind"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/livebind/issues"
+    "url": "https://github.com/dashw00d/livebind/issues"
   },
-  "homepage": "https://github.com/yourusername/livebind#readme"
+  "homepage": "https://github.com/dashw00d/livebind#readme"
 }
