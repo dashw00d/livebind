@@ -1,0 +1,115 @@
+{
+  "name": "livebind",
+  "version": "1.0.0",
+  "description": "Livewire-like reactivity for any backend. Lightweight, framework-agnostic, plugin-based.",
+  "author": "Ryan",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./core": {
+      "import": {
+        "types": "./dist/core.d.ts",
+        "default": "./dist/core.js"
+      },
+      "require": {
+        "types": "./dist/core.d.cts",
+        "default": "./dist/core.cjs"
+      }
+    },
+    "./plugins/forms": {
+      "import": {
+        "types": "./dist/plugins/forms.d.ts",
+        "default": "./dist/plugins/forms.js"
+      },
+      "require": {
+        "types": "./dist/plugins/forms.d.cts",
+        "default": "./dist/plugins/forms.cjs"
+      }
+    },
+    "./plugins/actions": {
+      "import": {
+        "types": "./dist/plugins/actions.d.ts",
+        "default": "./dist/plugins/actions.js"
+      },
+      "require": {
+        "types": "./dist/plugins/actions.d.cts",
+        "default": "./dist/plugins/actions.cjs"
+      }
+    },
+    "./plugins/navigation": {
+      "import": {
+        "types": "./dist/plugins/navigation.d.ts",
+        "default": "./dist/plugins/navigation.js"
+      },
+      "require": {
+        "types": "./dist/plugins/navigation.d.cts",
+        "default": "./dist/plugins/navigation.cjs"
+      }
+    },
+    "./plugins/polling": {
+      "import": {
+        "types": "./dist/plugins/polling.d.ts",
+        "default": "./dist/plugins/polling.js"
+      },
+      "require": {
+        "types": "./dist/plugins/polling.d.cts",
+        "default": "./dist/plugins/polling.cjs"
+      }
+    },
+    "./plugins/alpine": {
+      "import": {
+        "types": "./dist/plugins/alpine.d.ts",
+        "default": "./dist/plugins/alpine.js"
+      },
+      "require": {
+        "types": "./dist/plugins/alpine.d.cts",
+        "default": "./dist/plugins/alpine.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && cp dist/livebind.min.global.js dist/livebind.min.js",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0"
+  },
+  "keywords": [
+    "livewire",
+    "reactivity",
+    "ajax",
+    "forms",
+    "spa",
+    "htmx",
+    "alpine",
+    "turbo",
+    "unpoly"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/livebind"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/livebind/issues"
+  },
+  "homepage": "https://github.com/yourusername/livebind#readme"
+}
