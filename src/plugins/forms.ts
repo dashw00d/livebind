@@ -126,11 +126,32 @@ async function performUpdate(
 
     try {
         const form = container.tagName === 'FORM' ? container as HTMLFormElement : container.querySelector<HTMLFormElement>('form');
-        const formData = form ? new FormData(form) : new FormData();
-        const params: Record<string, string> = {};
-        for (const [key, value] of formData.entries()) {
-            if (value instanceof File) continue;
-            params[key] = value as string;
+        let params: Record<string, string> = {};
+
+        if (form) {
+            const formData = new FormData(form);
+            for (const [key, value] of formData.entries()) {
+                if (value instanceof File) continue;
+                params[key] = value as string;
+            }
+        } else {
+            // Collect inputs within the container when no form element is present
+            container.querySelectorAll<InputElement>('input, textarea, select, [data-live-model]').forEach((el) => {
+                const name = el.getAttribute('name') || el.getAttribute('data-live-model');
+                if (!name) return;
+
+                if (el.type === 'checkbox') {
+                    if ((el as HTMLInputElement).checked) {
+                        params[name] = el.value ?? 'on';
+                    } else if (!(name in params)) {
+                        params[name] = '';
+                    }
+                } else if (el.type === 'radio') {
+                    if ((el as HTMLInputElement).checked) params[name] = el.value;
+                } else {
+                    params[name] = el.value ?? '';
+                }
+            });
         }
 
         const response: RequestResponse = await LiveBind.request({ url, method: 'POST', params });
