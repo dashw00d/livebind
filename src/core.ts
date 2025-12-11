@@ -13,8 +13,7 @@ import type {
 
 class LiveBindCore {
     // ==================== STATIC STATE ====================
-    static isOnline: boolean = navigator.onLine;
-    static offlineElements: Set<HTMLElement> = new Set();
+    static isOnline: boolean = true;
     private static _globalInitialized: boolean = false;
     private static _plugins: LiveBindPlugin[] = [];
 
@@ -88,6 +87,7 @@ class LiveBindCore {
                     url,
                     method,
                     params: flattenParams(params as Record<string, unknown>),
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
                 });
                 return {
                     text: resp.text,
@@ -109,7 +109,7 @@ class LiveBindCore {
         }
 
         // Vanilla fetch
-        const csrfToken = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content;
+        const csrfToken = typeof document !== 'undefined' ? document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content : null;
         const headers: Record<string, string> = {
             'Content-Type': 'application/x-www-form-urlencoded',
             'X-Requested-With': 'XMLHttpRequest',
@@ -119,10 +119,22 @@ class LiveBindCore {
             headers['X-CSRF-TOKEN'] = csrfToken;
         }
 
-        const resp = await fetch(url, {
+        let finalUrl = url;
+        let body: URLSearchParams | undefined;
+
+        if (method === 'GET') {
+            const qs = serializeParams(params as Record<string, unknown>).toString();
+            if (qs) {
+                finalUrl += (url.includes('?') ? '&' : '?') + qs;
+            }
+        } else {
+            body = serializeParams(params as Record<string, unknown>);
+        }
+
+        const resp = await fetch(finalUrl, {
             method,
             headers,
-            body: serializeParams(params as Record<string, unknown>),
+            body,
         });
 
         return {
@@ -196,27 +208,34 @@ class LiveBindCore {
         this._globalInitialized = true;
 
         // Online/offline detection
-        window.addEventListener('online', () => {
-            this.isOnline = true;
-            this.offlineElements.forEach((el) => {
-                el.hidden = true;
-                el.style.display = 'none';
+        if (typeof window !== 'undefined' && typeof navigator !== 'undefined') {
+            this.isOnline = navigator.onLine;
+            window.addEventListener('online', () => {
+                this.isOnline = true;
+                // WeakSet cannot be iterated, so we rely on finding elements in DOM
+                document.querySelectorAll<HTMLElement>('[data-live-offline]').forEach((el) => {
+                    el.hidden = true;
+                    el.style.display = 'none';
+                });
+                document.querySelectorAll<LiveBindContainer>('[data-live-form]').forEach((container) => {
+                    this.emit(container, 'online', {});
+                });
             });
-            document.querySelectorAll<LiveBindContainer>('[data-live-form]').forEach((container) => {
-                this.emit(container, 'online', {});
-            });
-        });
+        }
 
-        window.addEventListener('offline', () => {
-            this.isOnline = false;
-            this.offlineElements.forEach((el) => {
-                el.hidden = false;
-                el.style.display = '';
+        if (typeof window !== 'undefined') {
+            window.addEventListener('offline', () => {
+                this.isOnline = false;
+                // WeakSet cannot be iterated, rely on DOM query
+                document.querySelectorAll<HTMLElement>('[data-live-offline]').forEach((el) => {
+                    el.hidden = false;
+                    el.style.display = '';
+                });
+                document.querySelectorAll<LiveBindContainer>('[data-live-form]').forEach((container) => {
+                    this.emit(container, 'offline', {});
+                });
             });
-            document.querySelectorAll<LiveBindContainer>('[data-live-form]').forEach((container) => {
-                this.emit(container, 'offline', {});
-            });
-        });
+        }
 
         // Run plugin global setups
         this._plugins.forEach((plugin) => {
@@ -227,10 +246,22 @@ class LiveBindCore {
     // ==================== OUTPUT UPDATES ====================
 
     static updateOutputs(data: Record<string, unknown>, container: LiveBindContainer | null = null): void {
-        const scope = container?.hasAttribute('data-live-scoped') ? container : document;
+        let scope: Element | Document = document;
+
+        if (container) {
+            const scopeAttr = container.getAttribute('data-live-scope');
+            if (scopeAttr === 'container' || container.hasAttribute('data-live-scoped')) {
+                scope = container;
+            } else if (scopeAttr && scopeAttr !== 'document') {
+                const found = document.querySelector(scopeAttr);
+                if (found) scope = found;
+            }
+        }
 
         Object.entries(data).forEach(([key, value]) => {
             scope.querySelectorAll<HTMLElement>(`[data-live-output="${key}"]`).forEach((el) => {
+                if (el.closest('[data-live-ignore]')) return;
+
                 if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
                     (el as HTMLInputElement | HTMLTextAreaElement).value = String(value);
                 } else if (el.tagName === 'SELECT' || el.tagName === 'PROGRESS') {
@@ -241,6 +272,8 @@ class LiveBindCore {
             });
 
             scope.querySelectorAll<HTMLInputElement>(`[data-live-model="${key}"]`).forEach((el) => {
+                if (el.closest('[data-live-ignore]')) return;
+
                 if (el.type === 'checkbox') {
                     el.checked = Boolean(value);
                 } else if (el.type === 'radio') {
@@ -264,11 +297,6 @@ class LiveBindCore {
         const debounceMs = parseInt(container.getAttribute('data-live-debounce-loading') || '0', 10);
 
         if (isLoading) {
-            if (container._loadingHideTimeout) {
-                clearTimeout(container._loadingHideTimeout);
-                container._loadingHideTimeout = undefined;
-            }
-
             if (debounceMs > 0) {
                 container._loadingShowTimeout = setTimeout(() => {
                     if (loadingEl) loadingEl.style.display = '';
@@ -304,7 +332,6 @@ class LiveBindCore {
 
         // Offline indicators
         container.querySelectorAll<HTMLElement>('[data-live-offline]').forEach((el) => {
-            this.offlineElements.add(el);
             el.hidden = this.isOnline;
             el.style.display = this.isOnline ? 'none' : '';
         });

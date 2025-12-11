@@ -47,18 +47,17 @@ export interface LiveBindEventDetail {
  */
 export interface LiveBindStatic {
     isOnline: boolean;
-    offlineElements: Set<HTMLElement>;
     use(plugin: LiveBindPlugin): LiveBindStatic;
     getPlugin(name: string): LiveBindPlugin | undefined;
     request(options: RequestOptions): Promise<RequestResponse>;
     morph(target: Element, html: string): void;
     emit(container: Element, eventName: string, detail?: Record<string, unknown>): CustomEvent;
+    setLoading(container: Element, isLoading: boolean): void;
+    updateOutputs(data: Record<string, unknown>, container: LiveBindContainer | null): void;
+    initialize(container: LiveBindContainer): void;
+    initGlobal(): void;
     debounce<T extends (...args: unknown[]) => void>(fn: T, delay: number): (...args: Parameters<T>) => void;
     throttle<T extends (...args: unknown[]) => void>(fn: T, limit: number): (...args: Parameters<T>) => void;
-    initGlobal(): void;
-    updateOutputs(data: Record<string, unknown>, container?: LiveBindContainer | null): void;
-    setLoading(container: LiveBindContainer, isLoading: boolean): void;
-    initialize(container: LiveBindContainer): void;
 }
 
 /**
@@ -110,6 +109,7 @@ export interface LiveBindContainer extends HTMLElement {
     _liveBindStopPolling?: () => void;
     _loadingShowTimeout?: ReturnType<typeof setTimeout>;
     _loadingHideTimeout?: ReturnType<typeof setTimeout>;
+    _liveBindDropdownInitialized?: boolean;
 }
 
 // ==================== EXTERNAL LIBRARY TYPES ====================
@@ -121,6 +121,7 @@ export interface UnpolyRequest {
     url: string;
     method: string;
     params?: Record<string, unknown>;
+    headers?: Record<string, string>;
 }
 
 export interface UnpolyResponse {
@@ -133,6 +134,7 @@ declare global {
     interface Window {
         up?: {
             request(options: UnpolyRequest): Promise<UnpolyResponse>;
+            reload(selector: string, options?: unknown): Promise<void>;
         };
         Idiomorph?: {
             morph(target: Element, html: string, options?: { morphStyle?: string }): void;

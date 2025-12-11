@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LiveBind Scoping Test</title>
+    <script src="./dist/livebind.min.js"></script>
+    <style>
+        .box { border: 1px solid #ccc; padding: 10px; margin: 10px; }
+        .ignored { background: #f9f9f9; border-color: #999; }
+    </style>
+</head>
+<body>
+    <h1>LiveBind Scoping & Batch Actions Test</h1>
+
+    <!-- Setup Mock Server -->
+    <script>
+        // Simple mock for fetch to test without a real backend
+        const originalFetch = window.fetch;
+        window.fetch = async (url, options) => {
+            console.log('Fetch:', url, options);
+            const body = options.body instanceof URLSearchParams ? Object.fromEntries(options.body) : {};
+            
+            if (url === '/api/ignore-test') {
+                return new Response(JSON.stringify({ message: 'Action triggered' }), {
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            }
+
+            if (url === '/api/batch-test') {
+                return new Response(JSON.stringify({ 
+                    receivedIds: body['ids'] || body['ids[]'] || 'none',
+                    receivedAll: body['*'] || 'none'
+                }), {
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            }
+
+            if (url === '/api/scope-test') {
+                return new Response(`
+                    <div data-live-target="external-target">
+                        Updated External Content!
+                    </div>
+                `, {
+                    headers: { 'Content-Type': 'text/html' }
+                });
+            }
+
+            return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' }});
+        };
+    </script>
+
+    <!-- 1. Ignore Test -->
+    <div class="box">
+        <h3>1. Ignore Test</h3>
+        <div data-live-form data-live-url="/api/ignore-test">
+            <button data-live-action="/api/ignore-test">Valid Button</button>
+            
+            <div data-live-ignore class="box ignored">
+                <strong>Ignored Zone:</strong>
+                <button data-live-action="/api/ignore-test">Ignored Button (Should not trigger)</button>
+                <input type="text" data-live-input placeholder="Ignored Input">
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. Batch Test -->
+    <div class="box">
+        <h3>2. Batch Test (Global)</h3>
+        
+        <label><input type="checkbox" data-live-batch="ids" value="1"> Item 1 (Outside Form)</label>
+        <label><input type="checkbox" data-live-batch="ids" value="2"> Item 2 (Outside Form)</label>
+        <label><input type="checkbox" data-live-batch="other" value="A"> Other A (Outside Form)</label>
+
+        <div data-live-form data-live-url="/api/batch-test" class="box">
+            <label><input type="checkbox" data-live-batch="ids" value="3"> Item 3 (Inside Form)</label>
+            <br><br>
+            <button data-live-action="/api/batch-test" data-live-batch-action="ids">
+                Process "ids" (Should get 1, 2, 3)
+            </button>
+            <button data-live-action="/api/batch-test" data-live-batch-action="ids, other">
+                Process "ids, other" (Should get 1, 2, 3, A)
+            </button>
+            <button data-live-action="/api/batch-test" data-live-batch-action="*">
+                Process All (Should get 1, 2, 3, A)
+            </button>
+        </div>
+        
+        <div data-live-output="receivedIds"></div>
+        <div data-live-output="receivedAll"></div>
+    </div>
+
+    <!-- 3. Scope Test -->
+    <div class="box">
+        <h3>3. Scope Test</h3>
+        <div id="external-target" data-live-target="external-target" class="box">
+            Original External Content
+        </div>
+
+        <div data-live-form data-live-url="/api/scope-test" data-live-scope="document">
+            <button data-live-action="/api/scope-test">
+                Update External Target (Scoped to Document)
+            </button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // LiveBind.initGlobal(); // Auto-init is on by default in full bundle
+        });
+    </script>
+</body>
+</html>

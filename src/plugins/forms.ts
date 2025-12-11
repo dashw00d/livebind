@@ -18,6 +18,20 @@ const FormsPlugin: LiveBindPlugin = {
 
             const observer = new MutationObserver((mutations) => {
                 mutations.forEach((mutation) => {
+                    mutation.removedNodes.forEach((node) => {
+                        if (node.nodeType === 1) {
+                            const el = node as HTMLElement;
+                            // Check for removed polling containers
+                            if (el.matches?.('[data-live-form][data-live-poll]')) {
+                                (el as LiveBindContainer)._liveBindStopPolling?.();
+                            }
+                            // Check nested
+                            el.querySelectorAll?.<LiveBindContainer>('[data-live-form][data-live-poll]').forEach((c) => {
+                                c._liveBindStopPolling?.();
+                            });
+                        }
+                    });
+
                     mutation.addedNodes.forEach((node) => {
                         if (node.nodeType !== 1) return;
 
@@ -34,6 +48,19 @@ const FormsPlugin: LiveBindPlugin = {
             });
 
             observer.observe(document.body, { childList: true, subtree: true });
+
+            (LiveBind as unknown as { _observer: MutationObserver })._observer = observer;
+
+            // Global dropdown click listener
+            document.addEventListener('click', (e) => {
+                const target = e.target as Element;
+                document.querySelectorAll<HTMLElement>('[data-live-dropdown]').forEach((dd) => {
+                    const container = dd.closest('[data-live-form]');
+                    if (container && !container.contains(target)) {
+                        dd.style.display = 'none';
+                    }
+                });
+            });
         }
     },
 
@@ -49,6 +76,8 @@ const FormsPlugin: LiveBindPlugin = {
         const inputs = container.querySelectorAll<InputElement>('[data-live-input], [data-live-model]');
 
         inputs.forEach((input) => {
+            if (input.closest('[data-live-ignore]')) return;
+
             const updateFn = () => performUpdate(LiveBind, container, url, input);
             const limitedUpdate = throttleMs
                 ? LiveBind.throttle(updateFn, throttleMs)
@@ -91,6 +120,36 @@ const FormsPlugin: LiveBindPlugin = {
             });
         });
 
+        // Intercept form submissions
+        if (container.tagName === 'FORM') {
+            container.addEventListener('submit', (e) => {
+                const submitter = (e as SubmitEvent).submitter as HTMLElement | null;
+
+                // Allow native if the form container or submit button is explicitly marked native
+                if (container.matches('[data-live-native]') || submitter?.closest('[data-live-native]')) {
+                    return;
+                }
+
+                e.preventDefault();
+                performUpdate(LiveBind, container, url, null);
+            });
+        } else {
+            container.addEventListener('submit', (e) => {
+                const target = e.target as HTMLElement;
+                const submitter = (e as SubmitEvent).submitter as HTMLElement | null;
+
+                if (target.closest('[data-live-ignore]')) return;
+
+                // Allow native submission if explicitly marked on the form or the submit button
+                if (target.closest('[data-live-native]') || submitter?.closest('[data-live-native]')) {
+                    return;
+                }
+
+                e.preventDefault();
+                performUpdate(LiveBind, container, url, null);
+            });
+        }
+
         // Initial states for targets
         const initialStates = new Map<string, TargetInitialState>();
         container.querySelectorAll<HTMLElement>('[data-live-target]').forEach((target) => {
@@ -98,7 +157,7 @@ const FormsPlugin: LiveBindPlugin = {
             initialStates.set(key, { innerHTML: target.innerHTML, display: target.style.display });
 
             if (target.hasAttribute('data-live-dropdown')) {
-                setupDropdown(container, target);
+                setupDropdown(container);
             }
         });
         container._liveBindInitialStates = initialStates;
@@ -137,8 +196,12 @@ async function performUpdate(
         } else {
             // Collect inputs within the container when no form element is present
             container.querySelectorAll<InputElement>('input, textarea, select, [data-live-model]').forEach((el) => {
+                if (el.closest('[data-live-ignore]')) return;
                 const name = el.getAttribute('name') || el.getAttribute('data-live-model');
+
+                // Skip inputs without a name/model OR if it's a [data-live-model] on a non-input element that doesn't hold value
                 if (!name) return;
+                if (!('value' in el) && !(el as HTMLElement).hasAttribute('data-live-model')) return;
 
                 if (el.type === 'checkbox') {
                     if ((el as HTMLInputElement).checked) {
@@ -178,7 +241,18 @@ async function performUpdate(
             const parser = new DOMParser();
             const doc = parser.parseFromString(response.text, 'text/html');
 
-            container.querySelectorAll<HTMLElement>('[data-live-target]').forEach((target) => {
+            let scope: Element | Document = document;
+            const scopeAttr = container.getAttribute('data-live-scope');
+            if (scopeAttr === 'container' || container.hasAttribute('data-live-scoped')) {
+                scope = container;
+            } else if (scopeAttr && scopeAttr !== 'document') {
+                const found = document.querySelector(scopeAttr);
+                if (found) scope = found;
+            }
+
+            scope.querySelectorAll<HTMLElement>('[data-live-target]').forEach((target) => {
+                if (target.closest('[data-live-ignore]')) return;
+
                 const key = target.getAttribute('data-live-target')!;
                 const transitionName = target.getAttribute('data-live-transition');
                 const responseEl = doc.querySelector(`[data-live-target="${key}"]`) || doc.querySelector(`#${key}`);
@@ -311,13 +385,19 @@ function meetsMinLength(input: InputElement): boolean {
     return input.value.length >= minLength;
 }
 
-function setupDropdown(container: LiveBindContainer, target: HTMLElement): void {
+function setupDropdown(container: LiveBindContainer): void {
+    if (container._liveBindDropdownInitialized) return;
+    container._liveBindDropdownInitialized = true;
+
     let activeIndex = -1;
 
     container.addEventListener('keydown', (e: KeyboardEvent) => {
-        if (target.style.display === 'none') return;
+        // Only run if a dropdown inside this container is visible
+        const visibleDropdown = container.querySelector<HTMLElement>('[data-live-dropdown]:not([style*="display: none"])');
+        if (!visibleDropdown) return;
 
-        const items = target.querySelectorAll<HTMLElement>('[data-live-action], button, a');
+        // ... (existing logic, but using visibleDropdown)
+        const items = visibleDropdown.querySelectorAll<HTMLElement>('[data-live-action], button, a');
         if (!items.length) return;
 
         if (e.key === 'ArrowDown') {
@@ -332,14 +412,7 @@ function setupDropdown(container: LiveBindContainer, target: HTMLElement): void 
             e.preventDefault();
             items[activeIndex].click();
         } else if (e.key === 'Escape') {
-            target.style.display = 'none';
-            activeIndex = -1;
-        }
-    });
-
-    document.addEventListener('click', (e: MouseEvent) => {
-        if (!container.contains(e.target as Node)) {
-            target.style.display = 'none';
+            visibleDropdown.style.display = 'none';
             activeIndex = -1;
         }
     });

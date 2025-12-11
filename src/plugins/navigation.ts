@@ -37,7 +37,17 @@ function setupLinkNavigation(LiveBind: LiveBindStatic): void {
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
 
         const href = link.getAttribute('href');
-        if (!href || href.startsWith('http') || href.startsWith('//')) return;
+        if (!href) return;
+        if (
+            href.startsWith('http') ||
+            href.startsWith('//') ||
+            href.startsWith('mailto:') ||
+            href.startsWith('tel:') ||
+            href.startsWith('javascript:') ||
+            href.startsWith('#')
+        ) return;
+
+        if (link.hasAttribute('download')) return;
 
         e.preventDefault();
 

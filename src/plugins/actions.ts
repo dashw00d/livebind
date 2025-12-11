@@ -14,6 +14,8 @@ const ActionsPlugin: LiveBindPlugin = {
         container.addEventListener('click', async (e: MouseEvent) => {
             const target = e.target as Element;
 
+            if (target.closest('[data-live-ignore]')) return;
+
             // Clear action
             if (target.closest('[data-live-clear]')) {
                 e.preventDefault();
@@ -50,7 +52,7 @@ const ActionsPlugin: LiveBindPlugin = {
 
             const actionParams: Record<string, unknown> = {};
 
-            // Collect form data
+            // Collect form data - supports both <form> and non-form containers with data-live-form
             const form = container.tagName === 'FORM' ? container as HTMLFormElement : container.querySelector<HTMLFormElement>('form');
             if (form) {
                 const formData = new FormData(form);
@@ -59,6 +61,17 @@ const ActionsPlugin: LiveBindPlugin = {
                         actionParams[key] = value;
                     }
                 }
+            } else {
+                // For non-form containers (div[data-live-form]), manually collect named inputs
+                container.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>('input[name], textarea[name], select[name]').forEach((input) => {
+                    if (input.closest('[data-live-ignore]')) return;
+                    // Skip batch inputs (they're handled separately) and unchecked checkboxes/radios
+                    if (input.hasAttribute('data-live-batch')) return;
+                    if ((input.type === 'checkbox' || input.type === 'radio') && !(input as HTMLInputElement).checked) return;
+                    if (input.type === 'file') return;
+
+                    actionParams[input.name] = input.value;
+                });
             }
 
             // Collect data-live-param-*
@@ -69,8 +82,8 @@ const ActionsPlugin: LiveBindPlugin = {
             }
 
             // Collect batch values
-            if (batchActionName) {
-                actionParams[batchActionName] = collectBatchValues(container, batchActionName);
+            if (batchActionName !== null) {
+                actionParams[batchActionName || 'ids'] = collectBatchValues(container, batchActionName);
             }
 
             // Optimistic update
@@ -116,7 +129,18 @@ const ActionsPlugin: LiveBindPlugin = {
                     const parser = new DOMParser();
                     const doc = parser.parseFromString(response.text, 'text/html');
 
-                    container.querySelectorAll<HTMLElement>('[data-live-target]').forEach((targetEl) => {
+                    let scope: Element | Document = document;
+                    const scopeAttr = container.getAttribute('data-live-scope');
+                    if (scopeAttr === 'container' || container.hasAttribute('data-live-scoped')) {
+                        scope = container;
+                    } else if (scopeAttr && scopeAttr !== 'document') {
+                        const found = document.querySelector(scopeAttr);
+                        if (found) scope = found;
+                    }
+
+                    scope.querySelectorAll<HTMLElement>('[data-live-target]').forEach((targetEl) => {
+                        if (targetEl.closest('[data-live-ignore]')) return;
+
                         const key = targetEl.getAttribute('data-live-target')!;
                         const responseEl = doc.querySelector(`[data-live-target="${key}"]`) || doc.querySelector(`#${key}`);
                         if (responseEl) {
@@ -139,6 +163,38 @@ const ActionsPlugin: LiveBindPlugin = {
                 // Clear search input
                 const searchInput = container.querySelector<HTMLInputElement>("[data-live-input][type='text']");
                 if (searchInput) searchInput.value = '';
+
+                // Handle data-live-reload
+                const reloadSelector = actionEl.getAttribute('data-live-reload');
+                if (reloadSelector) {
+                    if (window.up?.reload) {
+                        try {
+                            await window.up.reload(reloadSelector);
+                        } catch (e) {
+                            console.warn('LiveBind: Unpoly reload failed', e);
+                        }
+                    } else {
+                        // Fallback: manual fetch and morph
+                        try {
+                            const reloadResp = await LiveBind.request({
+                                url: window.location.href,
+                                method: 'GET',
+                                params: {},
+                            });
+                            if (reloadResp.status === 200) {
+                                const parser = new DOMParser();
+                                const doc = parser.parseFromString(reloadResp.text, 'text/html');
+                                const newContent = doc.querySelector(reloadSelector);
+                                const currentContent = document.querySelector(reloadSelector);
+                                if (newContent && currentContent) {
+                                    LiveBind.morph(currentContent, newContent.innerHTML);
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('LiveBind: Fallback reload failed', e);
+                        }
+                    }
+                }
             } catch (error) {
                 console.error('LiveBind: Action failed', error);
                 rollback();
@@ -148,50 +204,50 @@ const ActionsPlugin: LiveBindPlugin = {
             }
         });
 
-        // File uploads
-        container.querySelectorAll<HTMLInputElement>('[data-live-upload]').forEach((input) => {
-            if (input.type !== 'file') return;
+        // File uploads (delegated)
+        container.addEventListener('change', (e: Event) => {
+            const input = e.target as HTMLInputElement;
+            if (input.type !== 'file' || !input.hasAttribute('data-live-upload')) return;
+            if (input.closest('[data-live-ignore]')) return;
 
-            input.addEventListener('change', () => {
-                if (!input.files?.length) return;
+            if (!input.files?.length) return;
 
-                const uploadUrl = input.getAttribute('data-live-upload') || url;
-                const formData = new FormData();
-                formData.append(input.name || 'file', input.files[0]);
+            const uploadUrl = input.getAttribute('data-live-upload') || url;
+            const formData = new FormData();
+            formData.append(input.name || 'file', input.files[0]);
 
-                const progressKey = input.getAttribute('data-live-progress');
+            const progressKey = input.getAttribute('data-live-progress');
 
-                const xhr = new XMLHttpRequest();
+            const xhr = new XMLHttpRequest();
 
-                if (progressKey) {
-                    xhr.upload.addEventListener('progress', (e: ProgressEvent) => {
-                        if (e.lengthComputable) {
-                            const percent = Math.round((e.loaded / e.total) * 100);
-                            LiveBind.updateOutputs({ [progressKey]: percent }, container);
-                        }
-                    });
-                }
-
-                xhr.addEventListener('load', () => {
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        try {
-                            const data = JSON.parse(xhr.responseText) as Record<string, unknown>;
-                            LiveBind.updateOutputs(data, container);
-                        } catch {
-                            // Ignore parse errors
-                        }
+            if (progressKey) {
+                xhr.upload.addEventListener('progress', (e: ProgressEvent) => {
+                    if (e.lengthComputable) {
+                        const percent = Math.round((e.loaded / e.total) * 100);
+                        LiveBind.updateOutputs({ [progressKey]: percent }, container);
                     }
-                    LiveBind.emit(container, 'uploadComplete', { input, xhr });
                 });
+            }
 
-                xhr.open('POST', uploadUrl);
-                const csrfToken = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content;
-                if (csrfToken) xhr.setRequestHeader('X-CSRF-TOKEN', csrfToken);
-                xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-                xhr.send(formData);
-
-                LiveBind.emit(container, 'uploadStart', { input });
+            xhr.addEventListener('load', () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    try {
+                        const data = JSON.parse(xhr.responseText) as Record<string, unknown>;
+                        LiveBind.updateOutputs(data, container);
+                    } catch {
+                        // Ignore parse errors
+                    }
+                }
+                LiveBind.emit(container, 'uploadComplete', { input, xhr });
             });
+
+            xhr.open('POST', uploadUrl);
+            const csrfToken = typeof document !== 'undefined' ? document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]')?.content : null;
+            if (csrfToken) xhr.setRequestHeader('X-CSRF-TOKEN', csrfToken);
+            xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+            xhr.send(formData);
+
+            LiveBind.emit(container, 'uploadStart', { input });
         });
     },
 };
@@ -199,10 +255,32 @@ const ActionsPlugin: LiveBindPlugin = {
 // ==================== BATCH ====================
 
 function collectBatchValues(container: LiveBindContainer, batchName: string): string[] {
+    let scope: Element | Document = document;
+    const scopeAttr = container.getAttribute('data-live-scope');
+    if (scopeAttr === 'container' || container.hasAttribute('data-live-scoped')) {
+        scope = container;
+    } else if (scopeAttr && scopeAttr !== 'document') {
+        const found = document.querySelector(scopeAttr);
+        if (found) scope = found;
+    }
+
     const values: string[] = [];
-    container.querySelectorAll<HTMLInputElement>(`[data-live-batch="${batchName}"]:checked`).forEach((el) => {
-        values.push(el.value);
-    });
+    const names = batchName.split(',').map((s) => s.trim()).filter(Boolean);
+
+    if (names.includes('*') || !names.length) {
+        scope.querySelectorAll<HTMLInputElement>('[data-live-batch]:checked').forEach((el) => {
+            if (el.closest('[data-live-ignore]')) return;
+            values.push(el.value);
+        });
+    } else {
+        names.forEach((name) => {
+            scope.querySelectorAll<HTMLInputElement>(`[data-live-batch="${name}"]:checked`).forEach((el) => {
+                if (el.closest('[data-live-ignore]')) return;
+                values.push(el.value);
+            });
+        });
+    }
+
     return values;
 }
 

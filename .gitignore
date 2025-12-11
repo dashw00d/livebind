@@ -3,3 +3,6 @@ original/
 dist/
 *.log
 .DS_Store
+GEMINI.md
+/.gemini
+AGENTS.md

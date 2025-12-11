@@ -102,6 +102,25 @@ document.querySelectorAll('[data-live-form]').forEach((el) => {
 </div>
 ```
 
+### Action with Partial Reload
+
+```html
+<div data-live-form data-live-url="/api/tasks">
+  <!-- This list will be reloaded after the action completes -->
+  <ul id="task-list">
+    <li>Task 1</li>
+    <li>Task 2</li>
+  </ul>
+  
+  <button 
+    data-live-action="/api/tasks/clear-completed" 
+    data-live-reload="#task-list"
+  >
+    Clear Completed
+  </button>
+</div>
+```
+
 ### Batch Actions
 
 ```html
@@ -176,7 +195,10 @@ document.querySelectorAll('[data-live-form]').forEach((el) => {
 | `data-live-delay="300"` | Debounce delay in ms (default: 300) |
 | `data-live-throttle="500"` | Throttle instead of debounce |
 | `data-live-defer` | Don't auto-submit; wait for submit button |
-| `data-live-scoped` | Limit output updates to this container |
+| `data-live-native` | Allow native form submission (bypasses LiveBind) |
+| `data-live-ignore` | Prevent LiveBind from processing this element and its children |
+| `data-live-scope="selector"` | Define scope for outputs/batch (default: 'container', 'document', or selector) |
+| `data-live-scoped` | Alias for `data-live-scope="container"` |
 | `data-live-poll="5000"` | Poll interval in ms |
 | `data-live-lazy` | Load content when element becomes visible |
 
@@ -208,7 +230,8 @@ document.querySelectorAll('[data-live-form]').forEach((el) => {
 | `data-live-optimistic="key: +1"` | Optimistic update spec |
 | `data-live-param-foo="bar"` | Add parameter to request |
 | `data-live-batch="name"` | Checkbox batch group |
-| `data-live-batch-action="name"` | Collect batch values |
+| `data-live-batch-action="names"` | Collect batch values (comma-separated or `*` for all) |
+| `data-live-reload="selector"` | Reload target element after success (via Unpoly or fetch) |
 | `data-live-navigate` | Push URL to history |
 
 ### File Upload Attributes
@@ -365,6 +388,22 @@ const MyPlugin: LiveBindPlugin = {
 
 LiveBindCore.use(MyPlugin);
 ```
+
+## Local Development
+
+To develop LiveBind locally while using it in another project:
+
+1. **In this directory:**
+   ```bash
+   npm link
+   npm run dev  # Watches for changes and rebuilds
+   ```
+
+2. **In your application directory:**
+   ```bash
+   npm link livebind
+   ```
+   Now any changes you make in `src/` will instantly update in your application (after a quick rebuild).
 
 ## License
 
