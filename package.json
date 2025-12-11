@@ -1,6 +1,6 @@
 {
   "name": "livebind",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Livewire-like reactivity for any backend. Lightweight, framework-agnostic, plugin-based.",
   "author": "Ryan",
   "license": "MIT",
